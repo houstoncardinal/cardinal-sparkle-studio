@@ -1,6 +1,7 @@
 import type { Track } from '@/types/daw';
 import { useDAWStore } from '@/stores/dawStore';
-import { Volume2, VolumeX, Headphones, Mic } from 'lucide-react';
+import { Mic, Snowflake } from 'lucide-react';
+import { useState, useEffect } from 'react';
 
 interface TrackHeaderProps {
   track: Track;
@@ -9,6 +10,14 @@ interface TrackHeaderProps {
 const TrackHeader = ({ track }: TrackHeaderProps) => {
   const { toggleMute, toggleSolo, toggleArm, selectTrack, selectedTrackId } = useDAWStore();
   const isSelected = selectedTrackId === track.id;
+
+  const [meter, setMeter] = useState(track.meterLevel);
+  useEffect(() => {
+    const iv = setInterval(() => {
+      setMeter(track.muted ? 0 : track.meterLevel * (0.75 + Math.random() * 0.25));
+    }, 100);
+    return () => clearInterval(iv);
+  }, [track.meterLevel, track.muted]);
 
   return (
     <div
@@ -22,8 +31,18 @@ const TrackHeader = ({ track }: TrackHeaderProps) => {
 
       {/* Track info */}
       <div className="flex-1 min-w-0">
-        <div className="text-xs font-medium text-foreground truncate">{track.name}</div>
-        <div className="text-[10px] text-muted-foreground uppercase">{track.type}</div>
+        <div className="flex items-center gap-1">
+          <span className="text-xs font-medium text-foreground truncate">{track.name}</span>
+          {track.frozen && <Snowflake size={8} className="text-daw-track-1 flex-shrink-0" />}
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="text-[9px] text-muted-foreground uppercase">{track.type}</span>
+          {track.phaseInverted && <span className="text-[8px] text-daw-meter-yellow">Ø</span>}
+          {track.stereoMode === 'mono' && <span className="text-[8px] text-daw-track-2">M</span>}
+        </div>
+        {track.sends.length > 0 && (
+          <div className="text-[7px] text-primary/60">{track.sends.length} send{track.sends.length > 1 ? 's' : ''}</div>
+        )}
       </div>
 
       {/* Controls */}
@@ -55,10 +74,10 @@ const TrackHeader = ({ track }: TrackHeaderProps) => {
       </div>
 
       {/* Mini meter */}
-      <div className="w-1.5 h-12 bg-daw-surface rounded-full overflow-hidden daw-inset">
+      <div className="w-1.5 h-12 bg-daw-surface rounded-full overflow-hidden daw-inset flex flex-col-reverse">
         <div
-          className="w-full rounded-full transition-all duration-100 meter-gradient"
-          style={{ height: `${track.muted ? 0 : track.meterLevel * 100}%`, marginTop: `${100 - (track.muted ? 0 : track.meterLevel * 100)}%` }}
+          className="w-full rounded-full transition-all duration-75 meter-gradient"
+          style={{ height: `${meter * 100}%` }}
         />
       </div>
     </div>

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { DAWState, Track, Clip } from '@/types/daw';
+import type { DAWState, Track } from '@/types/daw';
 
 const generateWaveform = (length: number): number[] =>
   Array.from({ length }, () => Math.random() * 0.8 + 0.1);
@@ -8,71 +8,99 @@ const trackColors = [
   'daw-track-1', 'daw-track-2', 'daw-track-3', 'daw-track-4', 'daw-track-5'
 ];
 
+const defaultTrackExtras = {
+  inputTrim: 0,
+  phaseInverted: false,
+  stereoMode: 'stereo' as const,
+  sends: [],
+  frozen: false,
+  peakHold: 0,
+  clipIndicator: false,
+  gainReduction: 0,
+};
+
 const defaultTracks: Track[] = [
   {
     id: '1', name: 'Lead Vocals', type: 'audio', color: trackColors[0],
     volume: 0.75, pan: 0, muted: false, soloed: false, armed: false,
-    meterLevel: 0.65,
+    meterLevel: 0.65, ...defaultTrackExtras,
+    sends: [{ id: 's1', targetBusId: '6', level: 0.3, preFader: false }],
     clips: [
       { id: 'c1', name: 'Verse 1', startBeat: 4, durationBeats: 16, color: trackColors[0], waveformData: generateWaveform(64) },
       { id: 'c2', name: 'Chorus', startBeat: 24, durationBeats: 16, color: trackColors[0], waveformData: generateWaveform(64) },
     ],
     effects: [
-      { id: 'e1', name: 'Compressor', type: 'compressor', enabled: true, params: { threshold: -18, ratio: 4 } },
-      { id: 'e2', name: 'Reverb', type: 'reverb', enabled: true, params: { mix: 25, decay: 2.5 } },
+      { id: 'e1', name: 'Compressor', type: 'compressor', enabled: true, params: { threshold: -18, ratio: 4, attack: 10, release: 100 } },
+      { id: 'e2', name: 'De-Esser', type: 'deesser', enabled: true, params: { frequency: 6000, threshold: -20 } },
+      { id: 'e3', name: 'Reverb', type: 'reverb', enabled: true, params: { mix: 25, decay: 2.5 } },
     ],
   },
   {
     id: '2', name: 'Backing Vocals', type: 'audio', color: trackColors[1],
     volume: 0.55, pan: -0.3, muted: false, soloed: false, armed: false,
-    meterLevel: 0.45,
+    meterLevel: 0.45, ...defaultTrackExtras,
+    sends: [{ id: 's2', targetBusId: '6', level: 0.5, preFader: false }],
     clips: [
       { id: 'c3', name: 'BV Chorus', startBeat: 24, durationBeats: 16, color: trackColors[1], waveformData: generateWaveform(64) },
     ],
     effects: [
-      { id: 'e3', name: 'EQ', type: 'eq', enabled: true, params: { low: -3, mid: 0, high: 2 } },
+      { id: 'e4', name: 'EQ', type: 'eq', enabled: true, params: { low: -3, mid: 0, high: 2 } },
+      { id: 'e5', name: 'Compressor', type: 'compressor', enabled: true, params: { threshold: -15, ratio: 3, attack: 15, release: 120 } },
     ],
   },
   {
     id: '3', name: '808 Bass', type: 'midi', color: trackColors[2],
     volume: 0.8, pan: 0, muted: false, soloed: false, armed: false,
-    meterLevel: 0.72,
+    meterLevel: 0.72, ...defaultTrackExtras, stereoMode: 'mono' as const,
     clips: [
       { id: 'c4', name: 'Bass Pattern', startBeat: 0, durationBeats: 32, color: trackColors[2], waveformData: generateWaveform(128) },
       { id: 'c5', name: 'Bass Drop', startBeat: 36, durationBeats: 12, color: trackColors[2], waveformData: generateWaveform(48) },
     ],
-    effects: [],
+    effects: [
+      { id: 'e6', name: 'Distortion', type: 'distortion', enabled: true, params: { drive: 30, tone: 60 } },
+    ],
   },
   {
     id: '4', name: 'Drums', type: 'midi', color: trackColors[3],
     volume: 0.7, pan: 0, muted: false, soloed: false, armed: false,
-    meterLevel: 0.8,
+    meterLevel: 0.8, ...defaultTrackExtras,
     clips: [
       { id: 'c6', name: 'Main Beat', startBeat: 0, durationBeats: 48, color: trackColors[3], waveformData: generateWaveform(192) },
     ],
     effects: [
-      { id: 'e4', name: 'Limiter', type: 'limiter', enabled: true, params: { ceiling: -0.3 } },
+      { id: 'e7', name: 'Compressor', type: 'compressor', enabled: true, params: { threshold: -12, ratio: 6, attack: 5, release: 80 } },
+      { id: 'e8', name: 'Limiter', type: 'limiter', enabled: true, params: { ceiling: -0.3 } },
     ],
   },
   {
     id: '5', name: 'Synth Pad', type: 'midi', color: trackColors[4],
     volume: 0.45, pan: 0.2, muted: false, soloed: false, armed: false,
-    meterLevel: 0.35,
+    meterLevel: 0.35, ...defaultTrackExtras,
+    sends: [{ id: 's3', targetBusId: '6', level: 0.6, preFader: false }],
     clips: [
       { id: 'c7', name: 'Pad A', startBeat: 8, durationBeats: 24, color: trackColors[4], waveformData: generateWaveform(96) },
     ],
     effects: [
-      { id: 'e5', name: 'Chorus', type: 'chorus', enabled: true, params: { rate: 0.5, depth: 60 } },
-      { id: 'e6', name: 'Delay', type: 'delay', enabled: true, params: { time: 375, feedback: 35 } },
+      { id: 'e9', name: 'Chorus', type: 'chorus', enabled: true, params: { rate: 0.5, depth: 60 } },
+      { id: 'e10', name: 'Delay', type: 'delay', enabled: true, params: { time: 375, feedback: 35, mix: 25 } },
     ],
   },
   {
     id: '6', name: 'FX Return', type: 'bus', color: trackColors[0],
     volume: 0.6, pan: 0, muted: false, soloed: false, armed: false,
-    meterLevel: 0.3,
+    meterLevel: 0.3, ...defaultTrackExtras,
     clips: [],
     effects: [
-      { id: 'e7', name: 'Reverb', type: 'reverb', enabled: true, params: { mix: 100, decay: 4 } },
+      { id: 'e11', name: 'Reverb', type: 'reverb', enabled: true, params: { mix: 100, decay: 4, predelay: 20 } },
+    ],
+  },
+  {
+    id: '7', name: 'Drum Bus', type: 'bus', color: trackColors[3],
+    volume: 0.75, pan: 0, muted: false, soloed: false, armed: false,
+    meterLevel: 0.6, ...defaultTrackExtras,
+    clips: [],
+    effects: [
+      { id: 'e12', name: 'Bus Comp', type: 'compressor', enabled: true, params: { threshold: -10, ratio: 2, attack: 30, release: 200 } },
     ],
   },
 ];
@@ -91,6 +119,20 @@ interface DAWStore extends DAWState {
   setZoom: (zoom: number) => void;
   toggleLoop: () => void;
   setCurrentBeat: (beat: number) => void;
+  setInputTrim: (trackId: string, trim: number) => void;
+  togglePhase: (trackId: string) => void;
+  toggleStereoMode: (trackId: string) => void;
+  setBufferSize: (size: number) => void;
+  toggleMetronome: () => void;
+  toggleSnap: () => void;
+  togglePerformanceMonitor: () => void;
+  toggleExportDialog: () => void;
+  toggleCollabModal: () => void;
+  toggleAISmartMix: () => void;
+  toggleAIStemSep: () => void;
+  toggleAIArrangement: () => void;
+  setPeakHold: (trackId: string, level: number) => void;
+  resetClipIndicator: (trackId: string) => void;
 }
 
 export const useDAWStore = create<DAWStore>((set) => ({
@@ -105,6 +147,18 @@ export const useDAWStore = create<DAWStore>((set) => ({
   loopEnd: 48,
   selectedTrackId: '1',
   zoom: 1,
+  bufferSize: 256,
+  sampleRate: 48000,
+  bitDepth: 24,
+  metronomeEnabled: false,
+  snapEnabled: true,
+  autosaveEnabled: true,
+  showPerformanceMonitor: false,
+  showExportDialog: false,
+  showCollabModal: false,
+  showAISmartMix: false,
+  showAIStemSep: false,
+  showAIArrangement: false,
 
   togglePlay: () => set((s) => ({ isPlaying: !s.isPlaying, isRecording: s.isPlaying ? false : s.isRecording })),
   toggleRecord: () => set((s) => ({ isRecording: !s.isRecording, isPlaying: true })),
@@ -129,4 +183,28 @@ export const useDAWStore = create<DAWStore>((set) => ({
   setZoom: (zoom) => set({ zoom }),
   toggleLoop: () => set((s) => ({ loopEnabled: !s.loopEnabled })),
   setCurrentBeat: (beat) => set({ currentBeat: beat }),
+  setInputTrim: (trackId, trim) => set((s) => ({
+    tracks: s.tracks.map((t) => (t.id === trackId ? { ...t, inputTrim: trim } : t)),
+  })),
+  togglePhase: (trackId) => set((s) => ({
+    tracks: s.tracks.map((t) => (t.id === trackId ? { ...t, phaseInverted: !t.phaseInverted } : t)),
+  })),
+  toggleStereoMode: (trackId) => set((s) => ({
+    tracks: s.tracks.map((t) => (t.id === trackId ? { ...t, stereoMode: t.stereoMode === 'stereo' ? 'mono' : 'stereo' } : t)),
+  })),
+  setBufferSize: (size) => set({ bufferSize: size }),
+  toggleMetronome: () => set((s) => ({ metronomeEnabled: !s.metronomeEnabled })),
+  toggleSnap: () => set((s) => ({ snapEnabled: !s.snapEnabled })),
+  togglePerformanceMonitor: () => set((s) => ({ showPerformanceMonitor: !s.showPerformanceMonitor })),
+  toggleExportDialog: () => set((s) => ({ showExportDialog: !s.showExportDialog })),
+  toggleCollabModal: () => set((s) => ({ showCollabModal: !s.showCollabModal })),
+  toggleAISmartMix: () => set((s) => ({ showAISmartMix: !s.showAISmartMix })),
+  toggleAIStemSep: () => set((s) => ({ showAIStemSep: !s.showAIStemSep })),
+  toggleAIArrangement: () => set((s) => ({ showAIArrangement: !s.showAIArrangement })),
+  setPeakHold: (trackId, level) => set((s) => ({
+    tracks: s.tracks.map((t) => (t.id === trackId ? { ...t, peakHold: Math.max(t.peakHold, level) } : t)),
+  })),
+  resetClipIndicator: (trackId) => set((s) => ({
+    tracks: s.tracks.map((t) => (t.id === trackId ? { ...t, clipIndicator: false, peakHold: 0 } : t)),
+  })),
 }));
