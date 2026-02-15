@@ -2,6 +2,9 @@ import TransportBar from './TransportBar';
 import Timeline from './Timeline';
 import BottomPanel from './BottomPanel';
 import Toolbar from './Toolbar';
+import PerformanceMonitor from './PerformanceMonitor';
+import ExportDialog from './ExportDialog';
+import CollabModal from './CollabModal';
 
 const DAWLayout = () => {
   return (
@@ -11,7 +14,10 @@ const DAWLayout = () => {
       <div className="flex-1 flex flex-col overflow-hidden relative">
         <Timeline />
         <BottomPanel />
+        <PerformanceMonitor />
       </div>
+      <ExportDialog />
+      <CollabModal />
     </div>
   );
 };

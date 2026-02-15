@@ -1,14 +1,23 @@
 import { useDAWStore } from '@/stores/dawStore';
-import { Play, Pause, Square, Circle, SkipBack, SkipForward, Repeat, Mic } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { Play, Pause, Square, Circle, SkipBack, SkipForward, Repeat } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { audioEngine } from '@/engine/AudioEngine';
 
 const TransportBar = () => {
   const {
     isPlaying, isRecording, bpm, currentBeat, loopEnabled, timeSignature,
-    togglePlay, toggleRecord, stop, setBpm, toggleLoop, setCurrentBeat
+    togglePlay, toggleRecord, stop, setBpm, toggleLoop, setCurrentBeat,
+    metronomeEnabled, toggleMetronome, sampleRate, bitDepth, bufferSize
   } = useDAWStore();
 
   const animRef = useRef<number>();
+  const [cpuLoad, setCpuLoad] = useState(8);
+  const [memUsage, setMemUsage] = useState(310);
+
+  // Initialize audio engine
+  useEffect(() => {
+    audioEngine.initialize(sampleRate, bufferSize).catch(console.error);
+  }, [sampleRate, bufferSize]);
 
   useEffect(() => {
     if (isPlaying) {
@@ -25,6 +34,16 @@ const TransportBar = () => {
     return () => { if (animRef.current) cancelAnimationFrame(animRef.current); };
   }, [isPlaying, bpm]);
 
+  // Performance metrics polling
+  useEffect(() => {
+    const iv = setInterval(() => {
+      const m = audioEngine.getPerformanceMetrics();
+      setCpuLoad(m.cpuLoad);
+      setMemUsage(m.memoryUsage);
+    }, 1000);
+    return () => clearInterval(iv);
+  }, []);
+
   const bars = Math.floor(currentBeat / timeSignature[0]) + 1;
   const beat = Math.floor(currentBeat % timeSignature[0]) + 1;
   const ticks = Math.floor((currentBeat % 1) * 100);
@@ -34,16 +53,21 @@ const TransportBar = () => {
   const secs = Math.floor(totalSeconds % 60);
   const ms = Math.floor((totalSeconds % 1) * 100);
 
+  const cpuColor = cpuLoad > 60 ? 'bg-daw-meter-red' : cpuLoad > 35 ? 'bg-daw-meter-yellow' : 'bg-daw-meter-green';
+
   return (
     <div className="h-14 bg-card border-b border-border flex items-center px-3 gap-2 select-none">
       {/* Logo */}
       <div className="flex items-center gap-2 mr-4">
-        <div className="w-7 h-7 rounded bg-primary flex items-center justify-center">
+        <div className="w-7 h-7 rounded bg-primary flex items-center justify-center gold-glow">
           <span className="text-primary-foreground font-bold text-sm">C</span>
         </div>
-        <span className="text-sm font-semibold text-primary gold-text-glow tracking-wide hidden lg:block">
-          CARDINAL STUDIO
-        </span>
+        <div className="hidden lg:block">
+          <span className="text-[11px] font-semibold text-primary gold-text-glow tracking-wide block leading-none">
+            CARDINAL STUDIO
+          </span>
+          <span className="text-[8px] text-muted-foreground tracking-widest">PRO</span>
+        </div>
       </div>
 
       <div className="h-8 w-px bg-border" />
@@ -76,7 +100,7 @@ const TransportBar = () => {
       <div className="h-8 w-px bg-border" />
 
       {/* Time Display */}
-      <div className="font-mono text-sm mx-3 flex gap-4">
+      <div className="font-mono text-sm mx-3 flex gap-3">
         <div className="bg-daw-surface rounded px-3 py-1 daw-inset min-w-[100px] text-center">
           <span className="text-muted-foreground text-[10px] block leading-none mb-0.5">BARS</span>
           <span className="text-primary font-semibold tabular-nums">
@@ -116,13 +140,21 @@ const TransportBar = () => {
       <button
         onClick={toggleLoop}
         className={`p-2 rounded transition-colors ${loopEnabled ? 'text-primary gold-text-glow' : 'text-muted-foreground hover:text-foreground'}`}
+        title="Loop"
       >
         <Repeat size={14} />
       </button>
 
-      {/* Metronome placeholder */}
-      <button className="p-2 rounded text-muted-foreground hover:text-foreground transition-colors">
-        <Mic size={14} />
+      {/* Metronome */}
+      <button
+        onClick={toggleMetronome}
+        className={`p-2 rounded transition-colors ${metronomeEnabled ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+        title="Metronome"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 2L6 22h12L12 2z" />
+          <path d="M12 8l4-4" />
+        </svg>
       </button>
 
       {/* Spacer */}
@@ -130,15 +162,19 @@ const TransportBar = () => {
 
       {/* CPU / Status */}
       <div className="flex items-center gap-3 text-[11px] font-mono text-muted-foreground">
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5">
+          <div className={`w-1.5 h-1.5 rounded-full ${cpuColor}`} />
+          <span>CPU {cpuLoad.toFixed(0)}%</span>
+        </div>
+        <div className="flex items-center gap-1.5">
           <div className="w-1.5 h-1.5 rounded-full bg-daw-meter-green" />
-          <span>CPU 12%</span>
+          <span>RAM {memUsage}MB</span>
         </div>
         <div className="flex items-center gap-1">
-          <div className="w-1.5 h-1.5 rounded-full bg-daw-meter-green" />
-          <span>RAM 340MB</span>
+          <span className="text-primary">{sampleRate / 1000}kHz</span>
+          <span className="text-muted-foreground/50">/</span>
+          <span className="text-primary">{bitDepth}bit</span>
         </div>
-        <span className="text-primary">48kHz / 24bit</span>
       </div>
     </div>
   );

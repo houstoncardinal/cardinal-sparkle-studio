@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { Sliders, Piano, Wand2, FolderOpen } from 'lucide-react';
-import Mixer from './Mixer';
+import { Sliders, Piano, Wand2, FolderOpen, Activity } from 'lucide-react';
+import ProMixer from './ProMixer';
 import EffectsRack from './EffectsRack';
-import AIPanel from './AIPanel';
+import AIProductionSuite from './AIProductionSuite';
 
 type Tab = 'mixer' | 'effects' | 'ai' | 'browser';
 
@@ -12,7 +12,7 @@ const BottomPanel = () => {
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: 'mixer', label: 'Mixer', icon: <Sliders size={12} /> },
     { id: 'effects', label: 'Effects', icon: <Piano size={12} /> },
-    { id: 'ai', label: 'AI Tools', icon: <Wand2 size={12} /> },
+    { id: 'ai', label: 'AI Studio', icon: <Wand2 size={12} /> },
     { id: 'browser', label: 'Browser', icon: <FolderOpen size={12} /> },
   ];
 
@@ -37,11 +37,11 @@ const BottomPanel = () => {
       </div>
 
       {/* Panel content */}
-      {activeTab === 'mixer' && <Mixer />}
+      {activeTab === 'mixer' && <ProMixer />}
       {activeTab === 'effects' && <EffectsRack />}
-      {activeTab === 'ai' && <AIPanel />}
+      {activeTab === 'ai' && <AIProductionSuite />}
       {activeTab === 'browser' && (
-        <div className="h-72 border-t border-border bg-card flex items-center justify-center">
+        <div className="h-[340px] border-t border-border bg-card flex items-center justify-center">
           <div className="text-center">
             <FolderOpen size={32} className="text-muted-foreground mx-auto mb-2" />
             <p className="text-sm text-muted-foreground">Sound Browser</p>
