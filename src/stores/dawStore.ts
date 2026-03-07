@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import type { DAWState, Track } from '@/types/daw';
+import type { DAWState, Track, Clip } from '@/types/daw';
+import { audioEngine } from '@/engine/AudioEngine';
 
 const generateWaveform = (length: number): number[] =>
   Array.from({ length }, () => Math.random() * 0.8 + 0.1);
@@ -23,7 +24,7 @@ const defaultTracks: Track[] = [
   {
     id: '1', name: 'Lead Vocals', type: 'audio', color: trackColors[0],
     volume: 0.75, pan: 0, muted: false, soloed: false, armed: false,
-    meterLevel: 0.65, ...defaultTrackExtras,
+    meterLevel: 0, ...defaultTrackExtras,
     sends: [{ id: 's1', targetBusId: '6', level: 0.3, preFader: false }],
     clips: [
       { id: 'c1', name: 'Verse 1', startBeat: 4, durationBeats: 16, color: trackColors[0], waveformData: generateWaveform(64) },
@@ -38,7 +39,7 @@ const defaultTracks: Track[] = [
   {
     id: '2', name: 'Backing Vocals', type: 'audio', color: trackColors[1],
     volume: 0.55, pan: -0.3, muted: false, soloed: false, armed: false,
-    meterLevel: 0.45, ...defaultTrackExtras,
+    meterLevel: 0, ...defaultTrackExtras,
     sends: [{ id: 's2', targetBusId: '6', level: 0.5, preFader: false }],
     clips: [
       { id: 'c3', name: 'BV Chorus', startBeat: 24, durationBeats: 16, color: trackColors[1], waveformData: generateWaveform(64) },
@@ -51,7 +52,7 @@ const defaultTracks: Track[] = [
   {
     id: '3', name: '808 Bass', type: 'midi', color: trackColors[2],
     volume: 0.8, pan: 0, muted: false, soloed: false, armed: false,
-    meterLevel: 0.72, ...defaultTrackExtras, stereoMode: 'mono' as const,
+    meterLevel: 0, ...defaultTrackExtras, stereoMode: 'mono' as const,
     clips: [
       { id: 'c4', name: 'Bass Pattern', startBeat: 0, durationBeats: 32, color: trackColors[2], waveformData: generateWaveform(128) },
       { id: 'c5', name: 'Bass Drop', startBeat: 36, durationBeats: 12, color: trackColors[2], waveformData: generateWaveform(48) },
@@ -63,7 +64,7 @@ const defaultTracks: Track[] = [
   {
     id: '4', name: 'Drums', type: 'midi', color: trackColors[3],
     volume: 0.7, pan: 0, muted: false, soloed: false, armed: false,
-    meterLevel: 0.8, ...defaultTrackExtras,
+    meterLevel: 0, ...defaultTrackExtras,
     clips: [
       { id: 'c6', name: 'Main Beat', startBeat: 0, durationBeats: 48, color: trackColors[3], waveformData: generateWaveform(192) },
     ],
@@ -75,7 +76,7 @@ const defaultTracks: Track[] = [
   {
     id: '5', name: 'Synth Pad', type: 'midi', color: trackColors[4],
     volume: 0.45, pan: 0.2, muted: false, soloed: false, armed: false,
-    meterLevel: 0.35, ...defaultTrackExtras,
+    meterLevel: 0, ...defaultTrackExtras,
     sends: [{ id: 's3', targetBusId: '6', level: 0.6, preFader: false }],
     clips: [
       { id: 'c7', name: 'Pad A', startBeat: 8, durationBeats: 24, color: trackColors[4], waveformData: generateWaveform(96) },
@@ -88,7 +89,7 @@ const defaultTracks: Track[] = [
   {
     id: '6', name: 'FX Return', type: 'bus', color: trackColors[0],
     volume: 0.6, pan: 0, muted: false, soloed: false, armed: false,
-    meterLevel: 0.3, ...defaultTrackExtras,
+    meterLevel: 0, ...defaultTrackExtras,
     clips: [],
     effects: [
       { id: 'e11', name: 'Reverb', type: 'reverb', enabled: true, params: { mix: 100, decay: 4, predelay: 20 } },
@@ -97,7 +98,7 @@ const defaultTracks: Track[] = [
   {
     id: '7', name: 'Drum Bus', type: 'bus', color: trackColors[3],
     volume: 0.75, pan: 0, muted: false, soloed: false, armed: false,
-    meterLevel: 0.6, ...defaultTrackExtras,
+    meterLevel: 0, ...defaultTrackExtras,
     clips: [],
     effects: [
       { id: 'e12', name: 'Bus Comp', type: 'compressor', enabled: true, params: { threshold: -10, ratio: 2, attack: 30, release: 200 } },
@@ -105,37 +106,65 @@ const defaultTracks: Track[] = [
   },
 ];
 
+let clipIdCounter = 100;
+let trackIdCounter = 10;
+
 interface DAWStore extends DAWState {
+  // Transport
   togglePlay: () => void;
   toggleRecord: () => void;
   stop: () => void;
   setBpm: (bpm: number) => void;
+  setCurrentBeat: (beat: number) => void;
+  toggleLoop: () => void;
+  toggleMetronome: () => void;
+  
+  // Track controls
   setVolume: (trackId: string, volume: number) => void;
   setPan: (trackId: string, pan: number) => void;
   toggleMute: (trackId: string) => void;
   toggleSolo: (trackId: string) => void;
   toggleArm: (trackId: string) => void;
   selectTrack: (trackId: string | null) => void;
-  setZoom: (zoom: number) => void;
-  toggleLoop: () => void;
-  setCurrentBeat: (beat: number) => void;
+  addTrack: (name: string, type: 'audio' | 'midi') => string;
+  deleteTrack: (trackId: string) => void;
+  renameTrack: (trackId: string, name: string) => void;
+  
+  // Clip operations
+  moveClip: (trackId: string, clipId: string, newStartBeat: number) => void;
+  resizeClip: (trackId: string, clipId: string, newDuration: number) => void;
+  splitClip: (trackId: string, clipId: string, splitBeat: number) => void;
+  deleteClip: (trackId: string, clipId: string) => void;
+  addClip: (trackId: string, clip: Clip) => void;
+  
+  // Advanced track controls
   setInputTrim: (trackId: string, trim: number) => void;
   togglePhase: (trackId: string) => void;
   toggleStereoMode: (trackId: string) => void;
-  setBufferSize: (size: number) => void;
-  toggleMetronome: () => void;
+  
+  // View
+  setZoom: (zoom: number) => void;
   toggleSnap: () => void;
+  setBufferSize: (size: number) => void;
+  
+  // Panels
   togglePerformanceMonitor: () => void;
   toggleExportDialog: () => void;
   toggleCollabModal: () => void;
   toggleAISmartMix: () => void;
   toggleAIStemSep: () => void;
   toggleAIArrangement: () => void;
+  
+  // Metering
   setPeakHold: (trackId: string, level: number) => void;
   resetClipIndicator: (trackId: string) => void;
+  updateMeterLevel: (trackId: string, level: number) => void;
+  
+  // Import
+  setTrackClips: (trackId: string, clips: Clip[]) => void;
 }
 
-export const useDAWStore = create<DAWStore>((set) => ({
+export const useDAWStore = create<DAWStore>((set, get) => ({
   tracks: defaultTracks,
   bpm: 140,
   timeSignature: [4, 4] as [number, number],
@@ -160,29 +189,158 @@ export const useDAWStore = create<DAWStore>((set) => ({
   showAIStemSep: false,
   showAIArrangement: false,
 
-  togglePlay: () => set((s) => ({ isPlaying: !s.isPlaying, isRecording: s.isPlaying ? false : s.isRecording })),
-  toggleRecord: () => set((s) => ({ isRecording: !s.isRecording, isPlaying: true })),
-  stop: () => set({ isPlaying: false, isRecording: false, currentBeat: 0 }),
+  // Transport
+  togglePlay: () => {
+    const state = get();
+    if (!state.isPlaying) {
+      // Starting playback
+      audioEngine.playAllTracks(state.bpm, state.currentBeat);
+    } else {
+      // Pausing
+      audioEngine.stopAllTracks();
+    }
+    set((s) => ({ isPlaying: !s.isPlaying, isRecording: s.isPlaying ? false : s.isRecording }));
+  },
+  toggleRecord: () => {
+    const state = get();
+    if (!state.isRecording) {
+      // Find armed track
+      const armedTrack = state.tracks.find(t => t.armed);
+      if (armedTrack) {
+        audioEngine.startRecording(armedTrack.id);
+      }
+    } else {
+      audioEngine.stopRecording();
+    }
+    set((s) => ({ isRecording: !s.isRecording, isPlaying: true }));
+  },
+  stop: () => {
+    audioEngine.stopAllTracks();
+    set({ isPlaying: false, isRecording: false, currentBeat: 0 });
+  },
   setBpm: (bpm) => set({ bpm }),
-  setVolume: (trackId, volume) => set((s) => ({
-    tracks: s.tracks.map((t) => (t.id === trackId ? { ...t, volume } : t)),
-  })),
-  setPan: (trackId, pan) => set((s) => ({
-    tracks: s.tracks.map((t) => (t.id === trackId ? { ...t, pan } : t)),
-  })),
-  toggleMute: (trackId) => set((s) => ({
-    tracks: s.tracks.map((t) => (t.id === trackId ? { ...t, muted: !t.muted } : t)),
-  })),
-  toggleSolo: (trackId) => set((s) => ({
-    tracks: s.tracks.map((t) => (t.id === trackId ? { ...t, soloed: !t.soloed } : t)),
-  })),
+  setCurrentBeat: (beat) => set({ currentBeat: beat }),
+  toggleLoop: () => set((s) => ({ loopEnabled: !s.loopEnabled })),
+  toggleMetronome: () => set((s) => ({ metronomeEnabled: !s.metronomeEnabled })),
+
+  // Track controls
+  setVolume: (trackId, volume) => {
+    audioEngine.setTrackVolume(trackId, volume);
+    set((s) => ({
+      tracks: s.tracks.map((t) => (t.id === trackId ? { ...t, volume } : t)),
+    }));
+  },
+  setPan: (trackId, pan) => {
+    audioEngine.setTrackPan(trackId, pan);
+    set((s) => ({
+      tracks: s.tracks.map((t) => (t.id === trackId ? { ...t, pan } : t)),
+    }));
+  },
+  toggleMute: (trackId) => {
+    const track = get().tracks.find(t => t.id === trackId);
+    if (track) audioEngine.setTrackMute(trackId, !track.muted);
+    set((s) => ({
+      tracks: s.tracks.map((t) => (t.id === trackId ? { ...t, muted: !t.muted } : t)),
+    }));
+  },
+  toggleSolo: (trackId) => {
+    const track = get().tracks.find(t => t.id === trackId);
+    if (track) audioEngine.setTrackSolo(trackId, !track.soloed);
+    set((s) => ({
+      tracks: s.tracks.map((t) => (t.id === trackId ? { ...t, soloed: !t.soloed } : t)),
+    }));
+  },
   toggleArm: (trackId) => set((s) => ({
     tracks: s.tracks.map((t) => (t.id === trackId ? { ...t, armed: !t.armed } : t)),
   })),
   selectTrack: (trackId) => set({ selectedTrackId: trackId }),
-  setZoom: (zoom) => set({ zoom }),
-  toggleLoop: () => set((s) => ({ loopEnabled: !s.loopEnabled })),
-  setCurrentBeat: (beat) => set({ currentBeat: beat }),
+  
+  addTrack: (name, type) => {
+    const id = String(++trackIdCounter);
+    const color = trackColors[trackIdCounter % trackColors.length];
+    const newTrack: Track = {
+      id, name, type, color,
+      volume: 0.75, pan: 0, muted: false, soloed: false, armed: false,
+      clips: [], effects: [], meterLevel: 0, ...defaultTrackExtras,
+    };
+    audioEngine.createTrackNode(id);
+    set((s) => ({ tracks: [...s.tracks, newTrack], selectedTrackId: id }));
+    return id;
+  },
+  
+  deleteTrack: (trackId) => {
+    audioEngine.removeTrackNode(trackId);
+    set((s) => ({
+      tracks: s.tracks.filter(t => t.id !== trackId),
+      selectedTrackId: s.selectedTrackId === trackId ? (s.tracks[0]?.id ?? null) : s.selectedTrackId,
+    }));
+  },
+  
+  renameTrack: (trackId, name) => set((s) => ({
+    tracks: s.tracks.map(t => t.id === trackId ? { ...t, name } : t),
+  })),
+
+  // Clip operations
+  moveClip: (trackId, clipId, newStartBeat) => set((s) => ({
+    tracks: s.tracks.map(t => t.id === trackId ? {
+      ...t,
+      clips: t.clips.map(c => c.id === clipId ? { ...c, startBeat: Math.max(0, newStartBeat) } : c),
+    } : t),
+  })),
+  
+  resizeClip: (trackId, clipId, newDuration) => set((s) => ({
+    tracks: s.tracks.map(t => t.id === trackId ? {
+      ...t,
+      clips: t.clips.map(c => c.id === clipId ? { ...c, durationBeats: Math.max(1, newDuration) } : c),
+    } : t),
+  })),
+  
+  splitClip: (trackId, clipId, splitBeat) => set((s) => ({
+    tracks: s.tracks.map(t => {
+      if (t.id !== trackId) return t;
+      const clip = t.clips.find(c => c.id === clipId);
+      if (!clip || splitBeat <= clip.startBeat || splitBeat >= clip.startBeat + clip.durationBeats) return t;
+      
+      const leftDuration = splitBeat - clip.startBeat;
+      const rightDuration = clip.durationBeats - leftDuration;
+      const leftWaveLen = Math.floor((clip.waveformData?.length ?? 64) * (leftDuration / clip.durationBeats));
+      
+      const leftClip: Clip = {
+        ...clip,
+        durationBeats: leftDuration,
+        waveformData: clip.waveformData?.slice(0, leftWaveLen),
+      };
+      const rightClip: Clip = {
+        id: `c${++clipIdCounter}`,
+        name: `${clip.name} (R)`,
+        startBeat: splitBeat,
+        durationBeats: rightDuration,
+        color: clip.color,
+        waveformData: clip.waveformData?.slice(leftWaveLen),
+      };
+      
+      return {
+        ...t,
+        clips: [...t.clips.filter(c => c.id !== clipId), leftClip, rightClip],
+      };
+    }),
+  })),
+  
+  deleteClip: (trackId, clipId) => set((s) => ({
+    tracks: s.tracks.map(t => t.id === trackId ? {
+      ...t,
+      clips: t.clips.filter(c => c.id !== clipId),
+    } : t),
+  })),
+  
+  addClip: (trackId, clip) => set((s) => ({
+    tracks: s.tracks.map(t => t.id === trackId ? {
+      ...t,
+      clips: [...t.clips, clip],
+    } : t),
+  })),
+
+  // Advanced
   setInputTrim: (trackId, trim) => set((s) => ({
     tracks: s.tracks.map((t) => (t.id === trackId ? { ...t, inputTrim: trim } : t)),
   })),
@@ -192,19 +350,32 @@ export const useDAWStore = create<DAWStore>((set) => ({
   toggleStereoMode: (trackId) => set((s) => ({
     tracks: s.tracks.map((t) => (t.id === trackId ? { ...t, stereoMode: t.stereoMode === 'stereo' ? 'mono' : 'stereo' } : t)),
   })),
-  setBufferSize: (size) => set({ bufferSize: size }),
-  toggleMetronome: () => set((s) => ({ metronomeEnabled: !s.metronomeEnabled })),
+
+  // View
+  setZoom: (zoom) => set({ zoom }),
   toggleSnap: () => set((s) => ({ snapEnabled: !s.snapEnabled })),
+  setBufferSize: (size) => set({ bufferSize: size }),
+
+  // Panels
   togglePerformanceMonitor: () => set((s) => ({ showPerformanceMonitor: !s.showPerformanceMonitor })),
   toggleExportDialog: () => set((s) => ({ showExportDialog: !s.showExportDialog })),
   toggleCollabModal: () => set((s) => ({ showCollabModal: !s.showCollabModal })),
   toggleAISmartMix: () => set((s) => ({ showAISmartMix: !s.showAISmartMix })),
   toggleAIStemSep: () => set((s) => ({ showAIStemSep: !s.showAIStemSep })),
   toggleAIArrangement: () => set((s) => ({ showAIArrangement: !s.showAIArrangement })),
+
+  // Metering
   setPeakHold: (trackId, level) => set((s) => ({
     tracks: s.tracks.map((t) => (t.id === trackId ? { ...t, peakHold: Math.max(t.peakHold, level) } : t)),
   })),
   resetClipIndicator: (trackId) => set((s) => ({
     tracks: s.tracks.map((t) => (t.id === trackId ? { ...t, clipIndicator: false, peakHold: 0 } : t)),
+  })),
+  updateMeterLevel: (trackId, level) => set((s) => ({
+    tracks: s.tracks.map((t) => (t.id === trackId ? { ...t, meterLevel: level } : t)),
+  })),
+  
+  setTrackClips: (trackId, clips) => set((s) => ({
+    tracks: s.tracks.map(t => t.id === trackId ? { ...t, clips } : t),
   })),
 }));
