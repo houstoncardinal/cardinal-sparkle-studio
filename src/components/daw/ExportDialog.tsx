@@ -1,14 +1,17 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useDAWStore } from '@/stores/dawStore';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Download, X, FileAudio, Loader2, Check } from 'lucide-react';
+import { audioEngine } from '@/engine/AudioEngine';
 import type { ExportSettings } from '@/types/daw';
+import { toast } from 'sonner';
 
 const ExportDialog = () => {
-  const { showExportDialog, toggleExportDialog } = useDAWStore();
+  const { showExportDialog, toggleExportDialog, bpm, loopEnd } = useDAWStore();
   const [exporting, setExporting] = useState(false);
   const [done, setDone] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
 
   const [settings, setSettings] = useState<ExportSettings>({
     format: 'wav',
@@ -20,16 +23,61 @@ const ExportDialog = () => {
     mp3Bitrate: 320,
   });
 
-  const startExport = () => {
+  const startExport = useCallback(async () => {
     setExporting(true);
     setProgress(0);
-    const iv = setInterval(() => {
-      setProgress((p) => {
-        if (p >= 100) { clearInterval(iv); setExporting(false); setDone(true); return 100; }
-        return p + Math.random() * 12 + 3;
-      });
-    }, 200);
-  };
+
+    try {
+      // Calculate duration from loop end
+      const durationBeats = loopEnd;
+      const durationSec = (durationBeats / bpm) * 60;
+
+      setProgress(10);
+      const renderedBuffer = await audioEngine.exportMix(
+        durationSec,
+        settings.sampleRate,
+        setProgress
+      );
+
+      if (!renderedBuffer) {
+        toast.error('Export failed — no audio to render');
+        setExporting(false);
+        return;
+      }
+
+      setProgress(95);
+
+      // Convert to WAV blob
+      const wavBlob = audioEngine.audioBufferToWav(renderedBuffer, settings.bitDepth);
+      const url = URL.createObjectURL(wavBlob);
+      setDownloadUrl(url);
+
+      setProgress(100);
+      setExporting(false);
+      setDone(true);
+      toast.success('Export complete!');
+    } catch (err) {
+      console.error('Export error:', err);
+      toast.error('Export failed');
+      setExporting(false);
+    }
+  }, [bpm, loopEnd, settings]);
+
+  const handleDownload = useCallback(() => {
+    if (!downloadUrl) return;
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    a.download = `Cardinal_Studio_Mix.${settings.format}`;
+    a.click();
+  }, [downloadUrl, settings.format]);
+
+  const handleClose = useCallback(() => {
+    setDone(false);
+    setProgress(0);
+    if (downloadUrl) URL.revokeObjectURL(downloadUrl);
+    setDownloadUrl(null);
+    toggleExportDialog();
+  }, [downloadUrl, toggleExportDialog]);
 
   if (!showExportDialog) return null;
 
@@ -40,7 +88,7 @@ const ExportDialog = () => {
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center"
-        onClick={toggleExportDialog}
+        onClick={handleClose}
       >
         <motion.div
           initial={{ scale: 0.95, opacity: 0 }}
@@ -54,7 +102,7 @@ const ExportDialog = () => {
               <Download size={18} className="text-primary" />
               <h2 className="text-sm font-semibold text-foreground">Export Project</h2>
             </div>
-            <button onClick={toggleExportDialog} className="text-muted-foreground hover:text-foreground">
+            <button onClick={handleClose} className="text-muted-foreground hover:text-foreground">
               <X size={16} />
             </button>
           </div>
@@ -115,25 +163,6 @@ const ExportDialog = () => {
                 </div>
               </div>
 
-              {settings.format === 'mp3' && (
-                <div>
-                  <label className="text-[10px] text-muted-foreground block mb-1.5 uppercase tracking-wider">MP3 Bitrate</label>
-                  <div className="flex gap-1">
-                    {([128, 192, 256, 320] as const).map((br) => (
-                      <button
-                        key={br}
-                        onClick={() => setSettings((s) => ({ ...s, mp3Bitrate: br }))}
-                        className={`flex-1 py-1 rounded text-[10px] font-mono transition-all ${
-                          settings.mp3Bitrate === br ? 'bg-primary/15 text-primary' : 'bg-secondary/50 text-muted-foreground hover:text-foreground'
-                        }`}
-                      >
-                        {br}k
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               {/* Options */}
               <div className="flex flex-wrap gap-3">
                 {[
@@ -167,7 +196,7 @@ const ExportDialog = () => {
           {exporting && (
             <div className="py-8 text-center">
               <Loader2 size={24} className="text-primary animate-spin mx-auto mb-3" />
-              <p className="text-xs text-foreground mb-3">Rendering audio...</p>
+              <p className="text-xs text-foreground mb-3">Rendering audio via OfflineAudioContext...</p>
               <div className="h-2 bg-daw-surface rounded-full overflow-hidden daw-inset max-w-xs mx-auto mb-2">
                 <motion.div
                   className="h-full bg-primary rounded-full"
@@ -187,10 +216,13 @@ const ExportDialog = () => {
               <h4 className="text-sm font-medium text-foreground mb-1">Export Complete</h4>
               <p className="text-xs text-muted-foreground mb-4">Cardinal_Studio_Mix.{settings.format}</p>
               <div className="flex gap-2 justify-center">
-                <button className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-semibold">
+                <button 
+                  onClick={handleDownload}
+                  className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-semibold"
+                >
                   Download
                 </button>
-                <button onClick={() => { setDone(false); toggleExportDialog(); }} className="px-4 py-2 rounded-lg bg-secondary text-secondary-foreground text-xs">
+                <button onClick={handleClose} className="px-4 py-2 rounded-lg bg-secondary text-secondary-foreground text-xs">
                   Close
                 </button>
               </div>

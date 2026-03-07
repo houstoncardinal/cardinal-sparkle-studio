@@ -2,31 +2,23 @@ import { useDAWStore } from '@/stores/dawStore';
 import ProMixerChannel from './ProMixerChannel';
 import { motion } from 'framer-motion';
 import { useState, useEffect } from 'react';
+import { audioEngine } from '@/engine/AudioEngine';
 
 const ProMixer = () => {
   const tracks = useDAWStore((s) => s.tracks);
+  const [masterMeter, setMasterMeter] = useState({ left: 0, right: 0, peakL: 0, peakR: 0, lufs: -60 });
 
-  // Animated master meters
-  const [masterL, setMasterL] = useState(0.72);
-  const [masterR, setMasterR] = useState(0.68);
-  const [lufs, setLufs] = useState(-14.2);
-  const [masterPeakL, setMasterPeakL] = useState(0);
-  const [masterPeakR, setMasterPeakR] = useState(0);
-
+  // Real master metering
   useEffect(() => {
     const iv = setInterval(() => {
-      const l = 0.6 + Math.random() * 0.25;
-      const r = 0.58 + Math.random() * 0.25;
-      setMasterL(l);
-      setMasterR(r);
-      setMasterPeakL((p) => Math.max(p - 0.003, l));
-      setMasterPeakR((p) => Math.max(p - 0.003, r));
-      setLufs(-14 + Math.random() * 2 - 1);
-    }, 100);
+      if (audioEngine.isReady()) {
+        setMasterMeter(audioEngine.getMasterMeter());
+      }
+    }, 50);
     return () => clearInterval(iv);
   }, []);
 
-  const masterDb = -0.3;
+  const masterDb = masterMeter.peakL > 0 ? (20 * Math.log10(Math.max(masterMeter.peakL, masterMeter.peakR))).toFixed(1) : '-∞';
 
   return (
     <motion.div
@@ -43,21 +35,24 @@ const ProMixer = () => {
         <div className="text-[10px] font-semibold text-primary mb-1 tracking-wider gold-text-glow">MASTER</div>
         <div className="text-[7px] text-muted-foreground mb-2">Stereo Out</div>
 
-        {/* Master meters */}
+        {/* Master meters - real data */}
         <div className="flex gap-1 flex-1 w-full mb-1">
           <div className="flex gap-0.5 flex-1 justify-center">
-            {[masterL, masterR].map((level, idx) => {
-              const peak = idx === 0 ? masterPeakL : masterPeakR;
+            {[masterMeter.left, masterMeter.right].map((level, idx) => {
+              const peak = idx === 0 ? masterMeter.peakL : masterMeter.peakR;
+              // Scale for visual: RMS to display (0-1 range, amplified for visibility)
+              const displayLevel = Math.min(1, level * 3);
+              const displayPeak = Math.min(1, peak * 2.5);
               return (
                 <div key={idx} className="w-3 h-full bg-daw-surface rounded-sm overflow-hidden daw-inset relative flex flex-col-reverse">
                   <div
                     className="w-full meter-gradient rounded-sm transition-all duration-75"
-                    style={{ height: `${level * 100}%` }}
+                    style={{ height: `${displayLevel * 100}%` }}
                   />
-                  {peak > 0.01 && (
+                  {displayPeak > 0.01 && (
                     <div
                       className="absolute w-full h-px bg-foreground/80"
-                      style={{ bottom: `${Math.min(100, peak * 100)}%` }}
+                      style={{ bottom: `${Math.min(100, displayPeak * 100)}%` }}
                     />
                   )}
                 </div>
@@ -76,17 +71,25 @@ const ProMixer = () => {
         </div>
 
         <div className="w-full space-y-1 text-center">
-          <div className="text-[10px] font-mono text-primary tabular-nums font-semibold">{masterDb.toFixed(1)} dB</div>
+          <div className="text-[10px] font-mono text-primary tabular-nums font-semibold">{masterDb} dB</div>
           <div className="bg-daw-surface rounded px-2 py-1 daw-inset">
             <span className="text-[7px] text-muted-foreground block">LUFS (I)</span>
-            <span className="text-[10px] font-mono text-foreground font-semibold tabular-nums">{lufs.toFixed(1)}</span>
+            <span className="text-[10px] font-mono text-foreground font-semibold tabular-nums">
+              {isFinite(masterMeter.lufs) ? masterMeter.lufs.toFixed(1) : '-∞'}
+            </span>
           </div>
           <div className="bg-daw-surface rounded px-2 py-1 daw-inset">
             <span className="text-[7px] text-muted-foreground block">PEAK</span>
-            <span className={`text-[10px] font-mono font-semibold tabular-nums ${masterPeakL > 0.95 ? 'text-daw-meter-red' : 'text-foreground'}`}>
-              {(20 * Math.log10(Math.max(masterPeakL, masterPeakR) || 0.001)).toFixed(1)} dB
+            <span className={`text-[10px] font-mono font-semibold tabular-nums ${masterMeter.peakL > 0.95 ? 'text-daw-meter-red' : 'text-foreground'}`}>
+              {masterDb} dB
             </span>
           </div>
+          <button
+            onClick={() => audioEngine.resetPeaks()}
+            className="text-[7px] text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Reset Peaks
+          </button>
         </div>
       </div>
     </motion.div>

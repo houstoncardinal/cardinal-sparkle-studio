@@ -1,6 +1,7 @@
 import type { Track } from '@/types/daw';
 import { useDAWStore } from '@/stores/dawStore';
 import { useState, useEffect } from 'react';
+import { audioEngine } from '@/engine/AudioEngine';
 
 interface ProMixerChannelProps {
   track: Track;
@@ -9,53 +10,52 @@ interface ProMixerChannelProps {
 const ProMixerChannel = ({ track }: ProMixerChannelProps) => {
   const {
     toggleMute, toggleSolo, toggleArm, setVolume, setPan, selectTrack, selectedTrackId,
-    setInputTrim, togglePhase, toggleStereoMode, resetClipIndicator
+    togglePhase, toggleStereoMode, resetClipIndicator
   } = useDAWStore();
   const isSelected = selectedTrackId === track.id;
 
-  const [meterL, setMeterL] = useState(track.meterLevel);
-  const [meterR, setMeterR] = useState(track.meterLevel * 0.9);
+  const [meterL, setMeterL] = useState(0);
+  const [meterR, setMeterR] = useState(0);
   const [peakL, setPeakL] = useState(0);
   const [peakR, setPeakR] = useState(0);
   const [clipped, setClipped] = useState(false);
+  const [gr, setGr] = useState(0);
 
+  // Real metering from audio engine
   useEffect(() => {
     const iv = setInterval(() => {
-      if (!track.muted) {
-        const l = track.meterLevel * (0.7 + Math.random() * 0.3) * (track.volume);
-        const r = track.meterLevel * (0.65 + Math.random() * 0.35) * (track.volume);
-        setMeterL(l);
-        setMeterR(r);
-        if (l > peakL) setPeakL(l);
-        if (r > peakR) setPeakR(r);
-        if (l > 0.95 || r > 0.95) setClipped(true);
+      if (audioEngine.isReady()) {
+        const meter = audioEngine.getTrackMeter(track.id);
+        // Amplify for visual display (RMS values are typically small)
+        const scaledL = Math.min(1, meter.left * 3);
+        const scaledR = Math.min(1, meter.right * 3);
+        setMeterL(track.muted ? 0 : scaledL);
+        setMeterR(track.muted ? 0 : scaledR);
+        
+        if (scaledL > peakL) setPeakL(scaledL);
+        if (scaledR > peakR) setPeakR(scaledR);
+        if (scaledL > 0.95 || scaledR > 0.95) setClipped(true);
+        
+        // Real gain reduction
+        const grValue = audioEngine.getTrackGainReduction(track.id);
+        setGr(Math.abs(grValue) / 20); // Normalize to 0-1 range
       } else {
         setMeterL(0);
         setMeterR(0);
       }
-    }, 80);
+    }, 50);
+    
     // Peak hold decay
     const peakIv = setInterval(() => {
       setPeakL((p) => Math.max(0, p - 0.005));
       setPeakR((p) => Math.max(0, p - 0.005));
     }, 50);
+    
     return () => { clearInterval(iv); clearInterval(peakIv); };
-  }, [track.meterLevel, track.muted, track.volume]);
+  }, [track.id, track.muted]);
 
   const dbValue = track.volume > 0 ? (20 * Math.log10(track.volume)).toFixed(1) : '-∞';
   const trimDb = track.inputTrim > 0 ? `+${track.inputTrim}` : `${track.inputTrim}`;
-
-  // GR meter simulation
-  const [gr, setGr] = useState(0);
-  useEffect(() => {
-    const hasComp = track.effects.some((e) => e.type === 'compressor' && e.enabled);
-    if (hasComp && !track.muted) {
-      const iv = setInterval(() => setGr(Math.random() * 0.4 + 0.05), 100);
-      return () => clearInterval(iv);
-    } else {
-      setGr(0);
-    }
-  }, [track.effects, track.muted]);
 
   return (
     <div
@@ -133,7 +133,6 @@ const ProMixerChannel = ({ track }: ProMixerChannelProps) => {
         <svg viewBox="0 0 36 36" className="w-full h-full">
           <circle cx="18" cy="18" r="14" fill="none" stroke="hsl(var(--border))" strokeWidth="1.5" />
           <circle cx="18" cy="18" r="12" fill="hsl(var(--daw-surface))" className="group-hover:fill-[hsl(var(--daw-surface-raised))] transition-colors" />
-          {/* Indicator marks */}
           <circle cx="18" cy="18" r="2" fill="hsl(var(--muted-foreground))" opacity="0.3" />
           <line
             x1="18" y1="18"
@@ -149,7 +148,7 @@ const ProMixerChannel = ({ track }: ProMixerChannelProps) => {
 
       {/* Meter + Fader area */}
       <div className="flex gap-1.5 flex-1 mb-1 w-full">
-        {/* Stereo meters with peak hold */}
+        {/* Stereo meters with real data */}
         <div className="flex gap-0.5">
           {[meterL, meterR].map((level, idx) => {
             const peak = idx === 0 ? peakL : peakR;
@@ -159,7 +158,6 @@ const ProMixerChannel = ({ track }: ProMixerChannelProps) => {
                   className="w-full meter-gradient rounded-sm transition-all duration-75"
                   style={{ height: `${Math.min(100, level * 100)}%` }}
                 />
-                {/* Peak hold indicator */}
                 {peak > 0.01 && (
                   <div
                     className="absolute w-full h-px bg-foreground/60"
@@ -172,11 +170,11 @@ const ProMixerChannel = ({ track }: ProMixerChannelProps) => {
         </div>
 
         {/* GR meter */}
-        {gr > 0 && (
+        {gr > 0.001 && (
           <div className="w-1 h-full bg-daw-surface rounded-sm overflow-hidden daw-inset flex flex-col">
             <div
               className="w-full bg-daw-meter-yellow rounded-sm transition-all duration-75"
-              style={{ height: `${gr * 100}%` }}
+              style={{ height: `${Math.min(100, gr * 100)}%` }}
             />
           </div>
         )}
@@ -248,6 +246,5 @@ const ProMixerChannel = ({ track }: ProMixerChannelProps) => {
     </div>
   );
 };
-
 
 export default ProMixerChannel;

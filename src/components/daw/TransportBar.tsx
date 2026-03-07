@@ -1,6 +1,6 @@
 import { useDAWStore } from '@/stores/dawStore';
 import { Play, Pause, Square, Circle, SkipBack, SkipForward, Repeat } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { audioEngine } from '@/engine/AudioEngine';
 
 const TransportBar = () => {
@@ -11,14 +11,42 @@ const TransportBar = () => {
   } = useDAWStore();
 
   const animRef = useRef<number>();
-  const [cpuLoad, setCpuLoad] = useState(8);
-  const [memUsage, setMemUsage] = useState(310);
 
   // Initialize audio engine
   useEffect(() => {
-    audioEngine.initialize(sampleRate, bufferSize).catch(console.error);
-  }, [sampleRate, bufferSize]);
+    audioEngine.initialize(sampleRate).catch(console.error);
+  }, [sampleRate]);
 
+  // Keyboard shortcuts
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+    
+    switch (e.code) {
+      case 'Space':
+        e.preventDefault();
+        togglePlay();
+        break;
+      case 'KeyR':
+        if (!e.metaKey && !e.ctrlKey) toggleRecord();
+        break;
+      case 'Enter':
+        stop();
+        break;
+      case 'KeyL':
+        toggleLoop();
+        break;
+      case 'KeyM':
+        if (e.shiftKey) toggleMetronome();
+        break;
+    }
+  }, [togglePlay, toggleRecord, stop, toggleLoop, toggleMetronome]);
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
+
+  // Playhead animation
   useEffect(() => {
     if (isPlaying) {
       let last = performance.now();
@@ -26,7 +54,18 @@ const TransportBar = () => {
         const delta = (now - last) / 1000;
         last = now;
         const beatsPerSec = bpm / 60;
-        setCurrentBeat(useDAWStore.getState().currentBeat + delta * beatsPerSec);
+        const state = useDAWStore.getState();
+        let newBeat = state.currentBeat + delta * beatsPerSec;
+        
+        // Loop
+        if (state.loopEnabled && newBeat >= state.loopEnd) {
+          newBeat = state.loopStart;
+          // Re-trigger playback from loop start
+          audioEngine.stopAllTracks();
+          audioEngine.playAllTracks(state.bpm, state.loopStart);
+        }
+        
+        setCurrentBeat(newBeat);
         animRef.current = requestAnimationFrame(tick);
       };
       animRef.current = requestAnimationFrame(tick);
@@ -34,15 +73,9 @@ const TransportBar = () => {
     return () => { if (animRef.current) cancelAnimationFrame(animRef.current); };
   }, [isPlaying, bpm]);
 
-  // Performance metrics polling
-  useEffect(() => {
-    const iv = setInterval(() => {
-      const m = audioEngine.getPerformanceMetrics();
-      setCpuLoad(m.cpuLoad);
-      setMemUsage(m.memoryUsage);
-    }, 1000);
-    return () => clearInterval(iv);
-  }, []);
+  // Real performance metrics
+  const metrics = audioEngine.getPerformanceMetrics();
+  const cpuColor = metrics.cpuLoad > 60 ? 'bg-daw-meter-red' : metrics.cpuLoad > 35 ? 'bg-daw-meter-yellow' : 'bg-daw-meter-green';
 
   const bars = Math.floor(currentBeat / timeSignature[0]) + 1;
   const beat = Math.floor(currentBeat % timeSignature[0]) + 1;
@@ -52,8 +85,6 @@ const TransportBar = () => {
   const mins = Math.floor(totalSeconds / 60);
   const secs = Math.floor(totalSeconds % 60);
   const ms = Math.floor((totalSeconds % 1) * 100);
-
-  const cpuColor = cpuLoad > 60 ? 'bg-daw-meter-red' : cpuLoad > 35 ? 'bg-daw-meter-yellow' : 'bg-daw-meter-green';
 
   return (
     <div className="h-14 bg-card border-b border-border flex items-center px-3 gap-2 select-none">
@@ -74,21 +105,23 @@ const TransportBar = () => {
 
       {/* Transport Controls */}
       <div className="flex items-center gap-1 mx-2">
-        <button onClick={stop} className="p-2 rounded hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground">
+        <button onClick={stop} className="p-2 rounded hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground" title="Rewind (Enter)">
           <SkipBack size={14} />
         </button>
-        <button onClick={stop} className="p-2 rounded hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground">
+        <button onClick={stop} className="p-2 rounded hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground" title="Stop (Enter)">
           <Square size={14} />
         </button>
         <button
           onClick={togglePlay}
           className={`p-2.5 rounded-md transition-all ${isPlaying ? 'bg-primary text-primary-foreground gold-glow' : 'bg-secondary hover:bg-daw-surface-overlay text-foreground'}`}
+          title="Play/Pause (Space)"
         >
           {isPlaying ? <Pause size={16} /> : <Play size={16} />}
         </button>
         <button
           onClick={toggleRecord}
           className={`p-2 rounded transition-colors ${isRecording ? 'text-daw-recording animate-recording-blink' : 'text-muted-foreground hover:text-daw-recording'}`}
+          title="Record (R)"
         >
           <Circle size={14} fill={isRecording ? 'currentColor' : 'none'} />
         </button>
@@ -140,7 +173,7 @@ const TransportBar = () => {
       <button
         onClick={toggleLoop}
         className={`p-2 rounded transition-colors ${loopEnabled ? 'text-primary gold-text-glow' : 'text-muted-foreground hover:text-foreground'}`}
-        title="Loop"
+        title="Loop (L)"
       >
         <Repeat size={14} />
       </button>
@@ -149,7 +182,7 @@ const TransportBar = () => {
       <button
         onClick={toggleMetronome}
         className={`p-2 rounded transition-colors ${metronomeEnabled ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
-        title="Metronome"
+        title="Metronome (Shift+M)"
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 2L6 22h12L12 2z" />
@@ -164,11 +197,11 @@ const TransportBar = () => {
       <div className="flex items-center gap-3 text-[11px] font-mono text-muted-foreground">
         <div className="flex items-center gap-1.5">
           <div className={`w-1.5 h-1.5 rounded-full ${cpuColor}`} />
-          <span>CPU {cpuLoad.toFixed(0)}%</span>
+          <span>CPU {metrics.cpuLoad.toFixed(0)}%</span>
         </div>
         <div className="flex items-center gap-1.5">
           <div className="w-1.5 h-1.5 rounded-full bg-daw-meter-green" />
-          <span>RAM {memUsage}MB</span>
+          <span>RAM {metrics.memoryUsage || '—'}MB</span>
         </div>
         <div className="flex items-center gap-1">
           <span className="text-primary">{sampleRate / 1000}kHz</span>
